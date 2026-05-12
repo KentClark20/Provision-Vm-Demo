@@ -3,20 +3,17 @@
   hosts: localhost
   connection: local
   vars:
-
     # --- VM CONFIGURATION ---
     vm_name: "rhel-9-web-server"
     target_namespace: "kent-kamau-dev"
     storage_class: "gp3"
-    # Using small to avoid the ResourceQuota 'compute-deploy' limit
+    # Using small to stay under your ~7.2Gi remaining quota
     vm_size: "u1.small" 
 
   tasks:
     - name: Deploy and Start Virtual Machine
       kubernetes.core.k8s:
-        host: "{{ api_url }}"
-        api_key: "{{ api_token }}"
-        validate_certs: false
+        # host and api_key removed to use your active 'oc' session
         state: present
         definition:
           apiVersion: kubevirt.io/v1
@@ -25,7 +22,7 @@
             name: "{{ vm_name }}"
             namespace: "{{ target_namespace }}"
           spec:
-            runStrategy: Always # This ensures the VM starts automatically
+            runStrategy: Always 
             dataVolumeTemplates:
               - metadata:
                   name: "{{ vm_name }}-volume"
@@ -49,7 +46,7 @@
               metadata:
                 labels:
                   network.kubevirt.io/headlessService: headless
-                  app: web-server # Added label for potential service discovery
+                  app: web-server
               spec:
                 tolerations:
                   - effect: NoSchedule
@@ -84,7 +81,6 @@
                         user: rhel
                         password: redhat
                         chpasswd: { expire: False }
-                        # Install and Start Web Server
                         packages:
                           - httpd
                         runcmd:
