@@ -1,0 +1,74 @@
+---
+- name: Post-Start Configuration for RHEL 9 VM
+  hosts: localhost
+  connection: local
+  vars:
+    vm_name: "rhel-9-web-server"
+    target_namespace: "kent-kamau-dev"
+
+  tasks:
+    - name: Start the VM (Change RunStrategy to Always)
+      kubernetes.core.k8s:
+        state: patched
+        kind: VirtualMachine
+        name: "{{ vm_name }}"
+        namespace: "{{ target_namespace }}"
+        definition:
+          spec:
+            runStrategy: Always
+
+    - name: Wait for VM printableStatus to be Running
+      kubernetes.core.k8s_info:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachine
+        name: "{{ vm_name }}"
+        namespace: "{{ target_namespace }}"
+      register: vm_result
+      until: "vm_result.resources[0].status.printableStatus == 'Running'"
+      retries: 20
+      delay: 10
+
+    - name: Create Service to target the VM
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ vm_name }}-svc"
+            namespace: "{{ target_namespace }}"
+          spec:
+            selector:
+              kubevirt.io/domain: "{{ vm_name }}"
+            ports:
+              - protocol: TCP
+                port: 80
+                targetPort: 80
+
+    - name: Create Route to expose the Web Server
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: route.openshift.io/v1
+          kind: Route
+          metadata:
+            name: "{{ vm_name }}-route"
+            namespace: "{{ target_namespace }}"
+          spec:
+            to:
+              kind: Service
+              name: "{{ vm_name }}-svc"
+            port:
+              targetPort: 80
+
+    - name: Display the Web Server URL
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        name: "{{ vm_name }}-route"
+        namespace: "{{ target_namespace }}"
+      register: route_info
+
+    - name: Print Route Access URL
+      ansible.builtin.debug:
+        msg: "Access your web server at: http://{{ route_info.resources[0].spec.host }}"
