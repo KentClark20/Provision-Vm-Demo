@@ -1,16 +1,29 @@
 ---
-- name: Deploy RHEL 9 Virtual Machine
+- name: Automate RHEL 9 VM Provisioning
   hosts: localhost
   connection: local
   vars:
-    # Variables to make the playbook reusable
+    # Environment Configuration
     vm_name: "rhel-9-demo-vm"
     target_namespace: "kent-kamau-dev"
     storage_class: "gp3"
+    
+    # Sizing and Tuning
+    # Using 'VirtualMachineClusterInstancetype' is more reliable than 'name' alone
+    instance_type_kind: "VirtualMachineClusterInstancetype"
     vm_size: "u1.medium"
+    preference_kind: "VirtualMachineClusterPreference"
+    os_preference: "rhel.9"
 
   tasks:
-    - name: Create the Virtual Machine in OpenShift
+    - name: Verify target namespace exists
+      kubernetes.core.k8s_info:
+        kind: Namespace
+        name: "{{ target_namespace }}"
+      register: ns_check
+      failed_when: ns_check.resources | length == 0
+
+    - name: Deploy Virtual Machine instance
       kubernetes.core.k8s:
         state: present
         definition:
@@ -23,21 +36,26 @@
             runStrategy: Always
             dataVolumeTemplates:
               - metadata:
-                  name: "{{ vm_name }}-volume"
+                  name: "{{ vm_name }}-storage"
                 spec:
                   sourceRef:
                     kind: DataSource
                     name: rhel9
                     namespace: openshift-virtualization-os-images
                   storage:
+                    storageClassName: "{{ storage_class }}"
                     resources:
                       requests:
                         storage: 30Gi
-                    storageClassName: "{{ storage_class }}"
+            
+            # Resource Definition
             instancetype:
+              kind: "{{ instance_type_kind }}"
               name: "{{ vm_size }}"
             preference:
-              name: rhel.9
+              kind: "{{ preference_kind }}"
+              name: "{{ os_preference }}"
+            
             template:
               metadata:
                 labels:
@@ -48,22 +66,22 @@
                     autoattachPodInterface: false
                     disks:
                       - bootOrder: 1
-                        name: rootdisk
+                        name: root-disk
                     interfaces:
-                      - masquerade: {}
-                        name: default
+                      - name: default
+                        masquerade: {}
                 networks:
                   - name: default
                     pod: {}
                 subdomain: headless
                 volumes:
-                  - dataVolume:
-                      name: "{{ vm_name }}-volume"
-                    name: rootdisk
-                  - cloudInitNoCloud:
+                  - name: root-disk
+                    dataVolume:
+                      name: "{{ vm_name }}-storage"
+                  - name: cloud-init
+                    cloudInitNoCloud:
                       userData: |
                         #cloud-config
                         user: rhel
                         password: redhat
                         chpasswd: { expire: False }
-                      name: cloudinitdisk
