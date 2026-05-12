@@ -1,0 +1,69 @@
+---
+- name: Deploy RHEL 9 Virtual Machine
+  hosts: localhost
+  connection: local
+  vars:
+    # Variables to make the playbook reusable
+    vm_name: "rhel-9-demo-vm"
+    target_namespace: "kent-kamau-dev"
+    storage_class: "gp3"
+    vm_size: "u1.medium"
+
+  tasks:
+    - name: Create the Virtual Machine in OpenShift
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: kubevirt.io/v1
+          kind: VirtualMachine
+          metadata:
+            name: "{{ vm_name }}"
+            namespace: "{{ target_namespace }}"
+          spec:
+            runStrategy: Always
+            dataVolumeTemplates:
+              - metadata:
+                  name: "{{ vm_name }}-volume"
+                spec:
+                  sourceRef:
+                    kind: DataSource
+                    name: rhel9
+                    namespace: openshift-virtualization-os-images
+                  storage:
+                    resources:
+                      requests:
+                        storage: 30Gi
+                    storageClassName: "{{ storage_class }}"
+            instancetype:
+              name: "{{ vm_size }}"
+            preference:
+              name: rhel.9
+            template:
+              metadata:
+                labels:
+                  network.kubevirt.io/headlessService: headless
+              spec:
+                domain:
+                  devices:
+                    autoattachPodInterface: false
+                    disks:
+                      - bootOrder: 1
+                        name: rootdisk
+                    interfaces:
+                      - masquerade: {}
+                        name: default
+                networks:
+                  - name: default
+                    pod: {}
+                subdomain: headless
+                volumes:
+                  - dataVolume:
+                      name: "{{ vm_name }}-volume"
+                    name: rootdisk
+                  - cloudInitNoCloud:
+                      userData: |
+                        #cloud-config
+                        user: rhel
+                        password: redhat
+                        chpasswd: { expire: False }
+                      name: cloudinitdisk
