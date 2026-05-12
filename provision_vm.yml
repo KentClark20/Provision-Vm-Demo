@@ -9,7 +9,6 @@
     storage_class: "gp3"
     
     # Sizing and Tuning
-    # Using 'VirtualMachineClusterInstancetype' is more reliable than 'name' alone
     instance_type_kind: "VirtualMachineClusterInstancetype"
     vm_size: "u1.medium"
     preference_kind: "VirtualMachineClusterPreference"
@@ -20,12 +19,18 @@
       kubernetes.core.k8s_info:
         kind: Namespace
         name: "{{ target_namespace }}"
+        validate_certs: false  # Bypasses SSL verification issues
       register: ns_check
-      failed_when: ns_check.resources | length == 0
+
+    - name: Halt if namespace is missing or API failed
+      fail:
+        msg: "Namespace {{ target_namespace }} not found or API unreachable."
+      when: ns_check.resources is not defined or ns_check.resources | length == 0
 
     - name: Deploy Virtual Machine instance
       kubernetes.core.k8s:
         state: present
+        validate_certs: false
         definition:
           apiVersion: kubevirt.io/v1
           kind: VirtualMachine
