@@ -3,15 +3,18 @@
   hosts: localhost
   connection: local
   vars:
+    # --- AUTHENTICATION ---
+    api_url: "https://api.rm1.0a51.p1.openshiftapps.com:6443"
+    api_token: "sha256~rvAng2slrlpJyN1f3fNvUcJbOvkECGDeyIEt5oLxK-g"
 
     # --- VM CONFIGURATION ---
-    vm_name: "rhel-9-demo-vm"
+    vm_name: "rhel-9-provisioned-demo"
     target_namespace: "kent-kamau-dev"
     storage_class: "gp3"
     vm_size: "u1.medium"
 
   tasks:
-    - name: Deploy Virtual Machine instance
+    - name: Deploy Virtual Machine matching existing environment
       kubernetes.core.k8s:
         host: "{{ api_url }}"
         api_key: "{{ api_token }}"
@@ -24,10 +27,11 @@
             name: "{{ vm_name }}"
             namespace: "{{ target_namespace }}"
           spec:
-            runStrategy: Always
+            # Changed to Always to ensure it starts immediately
+            runStrategy: Always 
             dataVolumeTemplates:
               - metadata:
-                  name: "{{ vm_name }}-storage"
+                  name: "{{ vm_name }}-volume"
                 spec:
                   sourceRef:
                     kind: DataSource
@@ -49,15 +53,20 @@
                 labels:
                   network.kubevirt.io/headlessService: headless
               spec:
+                # Essential for your specific sandbox nodes
+                tolerations:
+                  - effect: NoSchedule
+                    key: sandbox-cnv
+                    operator: Exists
                 domain:
                   devices:
                     autoattachPodInterface: false
                     disks:
                       - bootOrder: 1
-                        name: root-disk
+                        name: rootdisk
                         disk:
                           bus: virtio
-                      - name: cloud-init-disk # ADDED THIS
+                      - name: cloudinitdisk
                         disk:
                           bus: virtio
                     interfaces:
@@ -68,13 +77,15 @@
                     pod: {}
                 subdomain: headless
                 volumes:
-                  - name: root-disk
+                  - name: rootdisk
                     dataVolume:
-                      name: "{{ vm_name }}-storage"
-                  - name: cloud-init-disk # MATCHED THIS
+                      name: "{{ vm_name }}-volume"
+                  - name: cloudinitdisk
                     cloudInitNoCloud:
                       userData: |
                         #cloud-config
                         user: rhel
                         password: redhat
                         chpasswd: { expire: False }
+                        ssh_authorized_keys:
+                          - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWLVjB2r2pRquMPtmI/8brPq9vwc8/PJzih1/Alnbkmhv60W0EuB5adWPktX8MHsKZnaClNGrYqj18P3beD6j66RmiJkuppl0TACDb6PqfuN/E0SSbuHw8xPZLp50XKj71AITW34h9JeoX8NDVVS0d1Y3+ySXO4ITAhxWAIROCafV8CQvJEPy72/IcdLj21PVznLxb2uR82LrI06acHM+0psIf98ZqTi4u2to0P4XIYLbWZdkjS2o4dim/9YV11GrR09YfnTNPhjhtOt+e/s5ZbvE/KahFriKuwXUaII7x0NvcMSmj7dgGu3HxLNe1mZrdmTQNmfZ6UcvT+AniCShXOdHRckeK6oLvkdx1J0qUA0a0Ze0VkKSa4f1uC+I5Svs3jqFqmy2Uu8REVaajAOyyLj8Y2wacZwdlaINwPM1u5ewFezhIp1L+xzGiMEZYkGBywmldoJyTa/mBTWxt4pBDqitiGrWPjckFNBGk14ebG7AwFh5KiG0impvZxPkbMFE= sandbox@cnv"
