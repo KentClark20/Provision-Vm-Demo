@@ -3,17 +3,14 @@
   hosts: localhost
   connection: local
   vars:
-    # --- VM CONFIGURATION ---
     vm_name: "rhel-9-web-server"
     target_namespace: "kent-kamau-dev"
     storage_class: "gp3"
-    # Using small to stay under your ~7.2Gi remaining quota
     vm_size: "u1.small" 
 
   tasks:
-    - name: Deploy and Start Virtual Machine
+    - name: Deploy Virtual Machine with httpd cloud-init
       kubernetes.core.k8s:
-        # host and api_key removed to use your active 'oc' session
         state: present
         definition:
           apiVersion: kubevirt.io/v1
@@ -89,3 +86,47 @@
                           - firewall-offline-cmd --add-service=http
                         ssh_authorized_keys:
                           - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWLVjB2r2pRquMPtmI/8brPq9vwc8/PJzih1/Alnbkmhv60W0EuB5adWPktX8MHsKZnaClNGrYqj18P3beD6j66RmiJkuppl0TACDb6PqfuN/E0SSbuHw8xPZLp50XKj71AITW34h9JeoX8NDVVS0d1Y3+ySXO4ITAhxWAIROCafV8CQvJEPy72/IcdLj21PVznLxb2uR82LrI06acHM+0psIf98ZqTi4u2to0P4XIYLbWZdkjS2o4dim/9YV11GrR09YfnTNPhjhtOt+e/s5ZbvE/KahFriKuwXUaII7x0NvcMSmj7dgGu3HxLNe1mZrdmTQNmfZ6UcvT+AniCShXOdHRckeK6oLvkdx1J0qUA0a0Ze0VkKSa4f1uC+I5Svs3jqFqmy2Uu8REVaajAOyyLj8Y2wacZwdlaINwPM1u5ewFezhIp1L+xzGiMEZYkGBywmldoJyTa/mBTWxt4pBDqitiGrWPjckFNBGk14ebG7AwFh5KiG0impvZxPkbMFE= sandbox@cnv"
+
+    - name: Wait for VM to be Running
+      kubernetes.core.k8s_info:
+        api_version: kubevirt.io/v1
+        kind: VirtualMachine
+        name: "{{ vm_name }}"
+        namespace: "{{ target_namespace }}"
+      register: vm_info
+      until: "vm_info.resources[0].status.printableStatus == 'Running'"
+      retries: 30
+      delay: 10
+
+    - name: Expose VM as an OpenShift Service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ vm_name }}-svc"
+            namespace: "{{ target_namespace }}"
+          spec:
+            selector:
+              kubevirt.io/domain: "{{ vm_name }}"
+            ports:
+              - protocol: TCP
+                port: 80
+                targetPort: 80
+
+    - name: Create OpenShift Route for Web Access
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: route.openshift.io/v1
+          kind: Route
+          metadata:
+            name: "{{ vm_name }}-route"
+            namespace: "{{ target_namespace }}"
+          spec:
+            to:
+              kind: Service
+              name: "{{ vm_name }}-svc"
+            port:
+              targetPort: 80
