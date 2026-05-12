@@ -3,34 +3,20 @@
   hosts: localhost
   connection: local
   vars:
-    # Environment Configuration
+
+    # --- VM CONFIGURATION ---
     vm_name: "rhel-9-demo-vm"
     target_namespace: "kent-kamau-dev"
     storage_class: "gp3"
-    
-    # Sizing and Tuning
-    instance_type_kind: "VirtualMachineClusterInstancetype"
     vm_size: "u1.medium"
-    preference_kind: "VirtualMachineClusterPreference"
-    os_preference: "rhel.9"
 
   tasks:
-    - name: Verify target namespace exists
-      kubernetes.core.k8s_info:
-        kind: Namespace
-        name: "{{ target_namespace }}"
-        validate_certs: false  # Bypasses SSL verification issues
-      register: ns_check
-
-    - name: Halt if namespace is missing or API failed
-      fail:
-        msg: "Namespace {{ target_namespace }} not found or API unreachable."
-      when: ns_check.resources is not defined or ns_check.resources | length == 0
-
     - name: Deploy Virtual Machine instance
       kubernetes.core.k8s:
-        state: present
+        host: "{{ api_url }}"
+        api_key: "{{ api_token }}"
         validate_certs: false
+        state: present
         definition:
           apiVersion: kubevirt.io/v1
           kind: VirtualMachine
@@ -52,15 +38,12 @@
                     resources:
                       requests:
                         storage: 30Gi
-            
-            # Resource Definition
             instancetype:
-              kind: "{{ instance_type_kind }}"
+              kind: VirtualMachineClusterInstancetype
               name: "{{ vm_size }}"
             preference:
-              kind: "{{ preference_kind }}"
-              name: "{{ os_preference }}"
-            
+              kind: VirtualMachineClusterPreference
+              name: rhel.9
             template:
               metadata:
                 labels:
@@ -72,6 +55,11 @@
                     disks:
                       - bootOrder: 1
                         name: root-disk
+                        disk:
+                          bus: virtio
+                      - name: cloud-init-disk # ADDED THIS
+                        disk:
+                          bus: virtio
                     interfaces:
                       - name: default
                         masquerade: {}
@@ -83,7 +71,7 @@
                   - name: root-disk
                     dataVolume:
                       name: "{{ vm_name }}-storage"
-                  - name: cloud-init
+                  - name: cloud-init-disk # MATCHED THIS
                     cloudInitNoCloud:
                       userData: |
                         #cloud-config
