@@ -1,0 +1,50 @@
+---
+- name: Configure Repositories and Setup Web Server
+  hosts: all
+  become: true
+  vars:
+    # Adjust these URLs if you are using a local mirror or specific RHEL version
+    baseos_url: "http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/"
+    appstream_url: "http://mirror.centos.org/centos/9-stream/AppStream/x86_64/os/"
+
+  tasks:
+    - name: Configure RHEL BaseOS Repository
+      ansible.builtin.yum_repository:
+        name: rhel-9-baseos
+        description: RHEL 9 BaseOS
+        baseurl: "{{ baseos_url }}"
+        enabled: yes
+        gpgcheck: no
+
+    - name: Configure RHEL AppStream Repository
+      ansible.builtin.yum_repository:
+        name: rhel-9-appstream
+        description: RHEL 9 AppStream
+        baseurl: "{{ appstream_url }}"
+        enabled: yes
+        gpgcheck: no
+
+    - name: Install httpd (Apache)
+      ansible.builtin.dnf:
+        name: httpd
+        state: present
+        update_cache: yes
+
+    - name: Create a basic landing page
+      ansible.builtin.copy:
+        content: "<h1>Web Server Configured via Ansible</h1>"
+        dest: /var/www/html/index.html
+        mode: '0644'
+
+    - name: Start and Enable httpd service
+      ansible.builtin.systemd:
+        name: httpd
+        state: started
+        enabled: yes
+
+    - name: Configure Firewall for HTTP
+      ansible.builtin.firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+      ignore_errors: yes # In case firewalld isn't running in the image
