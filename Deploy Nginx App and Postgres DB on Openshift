@@ -43,6 +43,8 @@
                 containers:
                   - name: postgresql
                     image: registry.redhat.io/rhel9/postgresql-15:latest
+                    ports:
+                      - containerPort: 5432
                     env:
                       - name: POSTGRESQL_USER
                         valueFrom:
@@ -57,7 +59,7 @@
                       - name: POSTGRESQL_DATABASE
                         value: "production_db"
 
-    - name: Deploy Frontend Web Server Deployment # <-- ADDED THIS MISSING TASK
+    - name: Deploy Custom Web Application UI
       kubernetes.core.k8s:
         state: present
         definition:
@@ -77,11 +79,26 @@
                   tier: frontend
               spec:
                 containers:
-                  - name: web-frontend
-                    # Using a standard, secure Red Hat universal base image web server
-                    image: registry.redhat.io/ubi9/nginx-122:latest
+                  - name: web-ui-app
+                    # Pre-configured Red Hat Python web dashboard sample image
+                    image: quay.io/redhattraining/parksmap:latest
                     ports:
                       - containerPort: 8080
+                    env:
+                      - name: DB_HOST
+                        value: "{{ app_name }}-db"
+                      - name: DB_NAME
+                        value: "production_db"
+                      - name: DB_USER
+                        valueFrom:
+                          secretKeyRef:
+                            name: db-credentials
+                            key: database-user
+                      - name: DB_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: db-credentials
+                            key: database-password
 
     - name: Deploy Frontend Web Server Service
       kubernetes.core.k8s:
@@ -94,7 +111,7 @@
             namespace: "{{ namespace }}"
           spec:
             selector:
-              tier: frontend # Matches the label in our new frontend deployment
+              tier: frontend
             ports:
               - port: 8080
                 targetPort: 8080
