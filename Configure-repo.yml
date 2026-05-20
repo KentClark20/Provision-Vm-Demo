@@ -7,12 +7,11 @@
     target_namespace: "kent-kamau-dev"
     storage_class: "gp3"
     vm_size: "u1.small" 
-    # Using your preferred repository mirrors
-    baseos_url: "http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/"
-    appstream_url: "http://mirror.centos.org/centos/9-stream/AppStream/x86_64/os/"
+    baseos_url: "[http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/](http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/)"
+    appstream_url: "[http://mirror.centos.org/centos/9-stream/AppStream/x86_64/os/](http://mirror.centos.org/centos/9-stream/AppStream/x86_64/os/)"
 
   tasks:
-    - name: Deploy Virtual Machine and Ensure it is Started
+    - name: Deploy Virtual Machine Definition
       kubernetes.core.k8s:
         state: present
         definition:
@@ -22,7 +21,8 @@
             name: "{{ vm_name }}"
             namespace: "{{ target_namespace }}"
           spec:
-            runStrategy: Always
+            # CHANGED: Dev Sandbox requires 'Manual'
+            runStrategy: Manual 
             dataVolumeTemplates:
               - metadata:
                   name: "{{ vm_name }}-volume"
@@ -77,8 +77,6 @@
                         user: rhel
                         password: redhat
                         chpasswd: { expire: False }
-                        
-                        # This configures the yum/dnf repositories directly in the VM on first boot
                         yum_repos:
                           rhel-9-baseos:
                             name: RHEL 9 BaseOS
@@ -90,17 +88,23 @@
                             baseurl: "{{ appstream_url }}"
                             enabled: true
                             gpgcheck: false
-
                         packages:
                           - httpd
-
                         runcmd:
                           - systemctl enable --now httpd
-                          - echo "<h1>Web Server Configured via Ansible & Cloud-Init</h1>" > /var/www/html/index.html
+                          - echo "<h1>RHEL 9 Web Server</h1>" > /var/www/html/index.html
                           - firewall-offline-cmd --zone=public --add-service=http --permanent
                           - firewall-cmd --reload
-                        ssh_authorized_keys:
-                          - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWLVjB2r2pRquMPtmI/8brPq9vwc8/PJzih1/Alnbkmhv60W0EuB5adWPktX8MHsKZnaClNGrYqj18P3beD6j66RmiJkuppl0TACDb6PqfuN/E0SSbuHw8xPZLp50XKj71AITW34h9JeoX8NDVVS0d1Y3+ySXO4ITAhxWAIROCafV8CQvJEPy72/IcdLj21PVznLxb2uR82LrI06acHM+0psIf98ZqTi4u2to0P4XIYLbWZdkjS2o4dim/9YV11GrR09YfnTNPhjhtOt+e/s5ZbvE/KahFriKuwXUaII7x0NvcMSmj7dgGu3HxLNe1mZrdmTQNmfZ6UcvT+AniCShXOdHRckeK6oLvkdx1J0qUA0a0Ze0VkKSa4f1uC+I5Svs3jqFqmy2Uu8REVaajAOyyLj8Y2wacZwdlaINwPM1u5ewFezhIp1L+xzGiMEZYkGBywmldoJyTa/mBTWxt4pBDqitiGrWPjckFNBGk14ebG7AwFh5KiG0impvZxPkbMFE= sandbox@cnv"
+
+    - name: Start the Virtual Machine
+      kubernetes.core.k8s:
+        state: patched
+        kind: VirtualMachine
+        name: "{{ vm_name }}"
+        namespace: "{{ target_namespace }}"
+        definition:
+          spec:
+            running: true
 
     - name: Create Service to expose Web Server
       kubernetes.core.k8s:
