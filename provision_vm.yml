@@ -7,9 +7,11 @@
     target_namespace: "kent-kamau-dev"
     storage_class: "gp3"
     vm_size: "u1.small" 
+    baseos_url: "http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/"
+    appstream_url: "http://mirror.centos.org/centos/9-stream/AppStream/x86_64/os/"
 
   tasks:
-    - name: Deploy Virtual Machine and Ensure it is Started
+    - name: Deploy Virtual Machine Definition
       kubernetes.core.k8s:
         state: present
         definition:
@@ -19,7 +21,8 @@
             name: "{{ vm_name }}"
             namespace: "{{ target_namespace }}"
           spec:
-            runStrategy: Always # Forces the VM to start automatically
+            # Enforces sandbox compliance
+            runStrategy: Manual 
             dataVolumeTemplates:
               - metadata:
                   name: "{{ vm_name }}-volume"
@@ -74,6 +77,20 @@
                         user: rhel
                         password: redhat
                         chpasswd: { expire: False }
+                        
+                        # Injected Repository Configuration
+                        yum_repos:
+                          rhel-9-baseos:
+                            name: RHEL 9 BaseOS
+                            baseurl: "{{ baseos_url }}"
+                            enabled: true
+                            gpgcheck: false
+                          rhel-9-appstream:
+                            name: RHEL 9 AppStream
+                            baseurl: "{{ appstream_url }}"
+                            enabled: true
+                            gpgcheck: false
+
                         packages:
                           - httpd
                         runcmd:
