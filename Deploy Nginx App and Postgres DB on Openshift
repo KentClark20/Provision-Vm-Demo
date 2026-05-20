@@ -57,6 +57,32 @@
                       - name: POSTGRESQL_DATABASE
                         value: "production_db"
 
+    - name: Deploy Frontend Web Server Deployment # <-- ADDED THIS MISSING TASK
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: "{{ app_name }}-frontend"
+            namespace: "{{ namespace }}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                tier: frontend
+            template:
+              metadata:
+                labels:
+                  tier: frontend
+              spec:
+                containers:
+                  - name: web-frontend
+                    # Using a standard, secure Red Hat universal base image web server
+                    image: registry.redhat.io/ubi9/nginx-122:latest
+                    ports:
+                      - containerPort: 8080
+
     - name: Deploy Frontend Web Server Service
       kubernetes.core.k8s:
         state: present
@@ -68,7 +94,7 @@
             namespace: "{{ namespace }}"
           spec:
             selector:
-              tier: frontend
+              tier: frontend # Matches the label in our new frontend deployment
             ports:
               - port: 8080
                 targetPort: 8080
