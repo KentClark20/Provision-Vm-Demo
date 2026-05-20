@@ -10,7 +10,7 @@
       private: yes
 
   vars:
-    vm_name: "rhel-9-web-server"
+    vm_name: "rhel-9-vm"
     target_namespace: "kent-kamau-dev"
     storage_class: "gp3"
     vm_size: "u1.small" 
