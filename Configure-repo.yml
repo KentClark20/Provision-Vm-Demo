@@ -1,5 +1,5 @@
 ---
-- name: Configure Repositories and Expose Web Server
+- name: Configure Repos and Web Server via Cloud-Init Update
   hosts: localhost
   connection: local
   vars:
@@ -9,7 +9,42 @@
     appstream_url: "http://mirror.centos.org/centos/9-stream/AppStream/x86_64/os/"
 
   tasks:
-    - name: Create Service to target the VM
+    - name: Inject Repository and Web Server configuration into existing VM
+      kubernetes.core.k8s:
+        state: patched
+        kind: VirtualMachine
+        name: "{{ vm_name }}"
+        namespace: "{{ target_namespace }}"
+        definition:
+          spec:
+            template:
+              spec:
+                volumes:
+                  - name: cloudinitdisk
+                    cloudInitNoCloud:
+                      userData: |
+                        #cloud-config
+                        user: rhel
+                        password: redhat
+                        chpasswd: { expire: False }
+                        yum_repos:
+                          rhel-9-baseos:
+                            name: RHEL 9 BaseOS
+                            baseurl: "{{ baseos_url }}"
+                            enabled: true
+                            gpgcheck: false
+                          rhel-9-appstream:
+                            name: RHEL 9 AppStream
+                            baseurl: "{{ appstream_url }}"
+                            enabled: true
+                            gpgcheck: false
+                        packages:
+                          - httpd
+                        runcmd:
+                          - systemctl enable --now httpd
+                          - echo "<h1>Web Server Configured Successfully!</h1>" > /var/www/html/index.html
+
+    - name: Create Service to expose Web Server
       kubernetes.core.k8s:
         state: present
         definition:
@@ -25,7 +60,7 @@
               - port: 80
                 targetPort: 80
 
-    - name: Create OpenShift Route (Your Public Endpoint)
+    - name: Create OpenShift Route (Your Reachable Endpoint)
       kubernetes.core.k8s:
         state: present
         definition:
@@ -41,30 +76,14 @@
             port:
               targetPort: 80
 
-    - name: Output Repository and Web Server Configuration Script
+    - name: Display reachability URL
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        name: "{{ vm_name }}-route"
+        namespace: "{{ target_namespace }}"
+      register: route_info
+
+    - name: Show your website link
       ansible.builtin.debug:
-        msg:
-          - "--------------------------------------------------------"
-          - "PUBLIC ENDPOINT TO REACH YOUR WEBSITE:"
-          - "Run 'oc get route {{ vm_name }}-route -n {{ target_namespace }}' to get your URL."
-          - "--------------------------------------------------------"
-          - "Since your VM already exists, execute these commands inside your VM terminal"
-          - "to instantly configure the repositories and start the web server:"
-          - "--------------------------------------------------------"
-          - "sudo tee /etc/yum.repos.d/centos-stream.repo <<EOF"
-          - "[baseos]"
-          - "name=CentOS Stream BaseOS"
-          - "baseurl={{ baseos_url }}"
-          - "gpgcheck=0"
-          - "enabled=1"
-          - ""
-          - "[appstream]"
-          - "name=CentOS Stream AppStream"
-          - "baseurl={{ appstream_url }}"
-          - "gpgcheck=0"
-          - "enabled=1"
-          - "EOF"
-          - "sudo dnf install -y httpd"
-          - "sudo systemctl enable --now httpd"
-          - "sudo echo '<h1>Web Server Configured Successfully</h1>' > /var/www/html/index.html"
-          - "--------------------------------------------------------"
+        msg: "Your web server will be accessible at: http://{{ route_info.resources[0].spec.host }}"
