@@ -1,112 +1,15 @@
 ---
-- name: Automate RHEL 9 VM and Web Server Provisioning
+- name: Configure Repositories and Expose Web Server
   hosts: localhost
   connection: local
   vars:
     vm_name: "rhel-9-web-server"
     target_namespace: "kent-kamau-dev"
-    storage_class: "gp3"
-    vm_size: "u1.small" 
-    baseos_url: "[http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/](http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/)"
-    appstream_url: "[http://mirror.centos.org/centos/9-stream/AppStream/x86_64/os/](http://mirror.centos.org/centos/9-stream/AppStream/x86_64/os/)"
+    baseos_url: "http://mirror.centos.org/centos/9-stream/BaseOS/x86_64/os/"
+    appstream_url: "http://mirror.centos.org/centos/9-stream/AppStream/x86_64/os/"
 
   tasks:
-    - name: Deploy Virtual Machine Definition
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: kubevirt.io/v1
-          kind: VirtualMachine
-          metadata:
-            name: "{{ vm_name }}"
-            namespace: "{{ target_namespace }}"
-          spec:
-            # CHANGED: Dev Sandbox requires 'Manual'
-            runStrategy: Manual 
-            dataVolumeTemplates:
-              - metadata:
-                  name: "{{ vm_name }}-volume"
-                spec:
-                  sourceRef:
-                    kind: DataSource
-                    name: rhel9
-                    namespace: openshift-virtualization-os-images
-                  storage:
-                    storageClassName: "{{ storage_class }}"
-                    resources:
-                      requests:
-                        storage: 30Gi
-            instancetype:
-              kind: VirtualMachineClusterInstancetype
-              name: "{{ vm_size }}"
-            preference:
-              kind: VirtualMachineClusterPreference
-              name: rhel.9
-            template:
-              metadata:
-                labels:
-                  kubevirt.io/domain: "{{ vm_name }}"
-                  app: web-server
-              spec:
-                tolerations:
-                  - effect: NoSchedule
-                    key: sandbox-cnv
-                    operator: Exists
-                domain:
-                  devices:
-                    interfaces:
-                      - name: default
-                        masquerade: {}
-                    disks:
-                      - bootOrder: 1
-                        name: rootdisk
-                        disk: { bus: virtio }
-                      - name: cloudinitdisk
-                        disk: { bus: virtio }
-                networks:
-                  - name: default
-                    pod: {}
-                volumes:
-                  - name: rootdisk
-                    dataVolume:
-                      name: "{{ vm_name }}-volume"
-                  - name: cloudinitdisk
-                    cloudInitNoCloud:
-                      userData: |
-                        #cloud-config
-                        user: rhel
-                        password: redhat
-                        chpasswd: { expire: False }
-                        yum_repos:
-                          rhel-9-baseos:
-                            name: RHEL 9 BaseOS
-                            baseurl: "{{ baseos_url }}"
-                            enabled: true
-                            gpgcheck: false
-                          rhel-9-appstream:
-                            name: RHEL 9 AppStream
-                            baseurl: "{{ appstream_url }}"
-                            enabled: true
-                            gpgcheck: false
-                        packages:
-                          - httpd
-                        runcmd:
-                          - systemctl enable --now httpd
-                          - echo "<h1>RHEL 9 Web Server</h1>" > /var/www/html/index.html
-                          - firewall-offline-cmd --zone=public --add-service=http --permanent
-                          - firewall-cmd --reload
-
-    - name: Start the Virtual Machine
-      kubernetes.core.k8s:
-        state: patched
-        kind: VirtualMachine
-        name: "{{ vm_name }}"
-        namespace: "{{ target_namespace }}"
-        definition:
-          spec:
-            running: true
-
-    - name: Create Service to expose Web Server
+    - name: Create Service to target the VM
       kubernetes.core.k8s:
         state: present
         definition:
@@ -122,7 +25,7 @@
               - port: 80
                 targetPort: 80
 
-    - name: Create OpenShift Route
+    - name: Create OpenShift Route (Your Public Endpoint)
       kubernetes.core.k8s:
         state: present
         definition:
@@ -137,3 +40,31 @@
               name: "{{ vm_name }}-svc"
             port:
               targetPort: 80
+
+    - name: Output Repository and Web Server Configuration Script
+      ansible.builtin.debug:
+        msg:
+          - "--------------------------------------------------------"
+          - "PUBLIC ENDPOINT TO REACH YOUR WEBSITE:"
+          - "Run 'oc get route {{ vm_name }}-route -n {{ target_namespace }}' to get your URL."
+          - "--------------------------------------------------------"
+          - "Since your VM already exists, execute these commands inside your VM terminal"
+          - "to instantly configure the repositories and start the web server:"
+          - "--------------------------------------------------------"
+          - "sudo tee /etc/yum.repos.d/centos-stream.repo <<EOF"
+          - "[baseos]"
+          - "name=CentOS Stream BaseOS"
+          - "baseurl={{ baseos_url }}"
+          - "gpgcheck=0"
+          - "enabled=1"
+          - ""
+          - "[appstream]"
+          - "name=CentOS Stream AppStream"
+          - "baseurl={{ appstream_url }}"
+          - "gpgcheck=0"
+          - "enabled=1"
+          - "EOF"
+          - "sudo dnf install -y httpd"
+          - "sudo systemctl enable --now httpd"
+          - "sudo echo '<h1>Web Server Configured Successfully</h1>' > /var/www/html/index.html"
+          - "--------------------------------------------------------"
