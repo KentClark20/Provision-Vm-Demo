@@ -1,20 +1,15 @@
 ---
-- name: Automate RHEL 9 VM and Web Server Provisioning with RHSM
+- name: Automate RHEL 9 VM and Web Server Provisioning via AAP
   hosts: localhost
   connection: local
-  
-  # This securely prompts you for your Red Hat account password when you execute the playbook
-  vars_prompt:
-    - name: rhsm_password
-      prompt: "Enter your Red Hat Subscription Password"
-      private: yes
-
   vars:
-    vm_name: "rhel-9-vm"
+    vm_name: "rhel-9-web-server"
     target_namespace: "kent-kamau-dev"
     storage_class: "gp3"
     vm_size: "u1.small" 
     rhsm_username: "kent.kamau@envisionglobal.co.ke"
+    # Note: rhsm_password is intentionally left out here because 
+    # AAP will inject it automatically from your Survey response.
 
   tasks:
     - name: Deploy Virtual Machine Definition
@@ -83,12 +78,11 @@
                         password: redhat
                         chpasswd: { expire: False }
                         
-                        # Command sequence to register with RHSM and fetch packages natively
                         runcmd:
                           - subscription-manager register --username="{{ rhsm_username }}" --password="{{ rhsm_password }}" --auto-attach
                           - dnf install -y httpd
                           - systemctl enable --now httpd
-                          - echo "<h1>Welcome to RHEL 9 (Registered via RHSM)</h1>" > /var/www/html/index.html
+                          - echo "<h1>Welcome to RHEL 9 (Configured via AAP Survey)</h1>" > /var/www/html/index.html
                           - firewall-offline-cmd --zone=public --add-service=http --permanent
                           - firewall-cmd --reload
                           
